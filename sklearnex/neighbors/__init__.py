@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-#===============================================================================
+# ===============================================================================
 # Copyright 2021 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,10 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
+from ._lof import LocalOutlierFactor
 from .knn_classification import KNeighborsClassifier
-from .knn_unsupervised import NearestNeighbors
 from .knn_regression import KNeighborsRegressor
+from .knn_unsupervised import NearestNeighbors
 
-__all__ = ['KNeighborsClassifier', 'KNeighborsRegressor', 'NearestNeighbors']
+__all__ = [
+    "KNeighborsClassifier",
+    "KNeighborsRegressor",
+    "LocalOutlierFactor",
+    "NearestNeighbors",
+]

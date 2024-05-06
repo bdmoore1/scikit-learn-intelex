@@ -41,7 +41,7 @@ echo "NO_DIST=$NO_DIST"
 if [[ ! $NO_DIST ]]; then
     echo "MPI unittest discover testing ..."
     mpirun --version
-    mpirun -n 4 python -m unittest discover -v -s ${daal4py_dir}/tests -p spmd*.py
+    mpirun -n 4 python -m unittest discover -v -s ${daal4py_dir}/tests -p test*spmd*.py
     return_code=$(($return_code + $?))
 fi
 
@@ -50,7 +50,19 @@ python -m unittest discover -v -s ${daal4py_dir}/tests -p test*.py
 return_code=$(($return_code + $?))
 
 echo "Pytest of daal4py running ..."
-pytest --pyargs ${daal4py_dir}/daal4py/sklearn
+pytest --verbose --pyargs ${daal4py_dir}/daal4py/sklearn
+return_code=$(($return_code + $?))
+
+echo "Pytest of sklearnex running ..."
+pytest --verbose --pyargs sklearnex
+return_code=$(($return_code + $?))
+
+echo "Pytest of onedal running ..."
+pytest --verbose --pyargs ${daal4py_dir}/onedal
+return_code=$(($return_code + $?))
+
+echo "Global patching test running ..."
+python ${daal4py_dir}/.ci/scripts/test_global_patch.py
 return_code=$(($return_code + $?))
 
 exit $return_code

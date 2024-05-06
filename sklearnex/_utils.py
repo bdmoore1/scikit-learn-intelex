@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-#===============================================================================
+# ===============================================================================
 # Copyright 2021 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,53 +12,72 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
+
+import logging
+import os
+import sys
+import warnings
+
+from daal4py.sklearn._utils import (
+    PatchingConditionsChain as daal4py_PatchingConditionsChain,
+)
+from daal4py.sklearn._utils import daal_check_version
+
+
+class PatchingConditionsChain(daal4py_PatchingConditionsChain):
+    def get_status(self):
+        return self.patching_is_enabled
+
+    def write_log(self, queue=None):
+        if self.patching_is_enabled:
+            self.logger.info(
+                f"{self.scope_name}: {get_patch_message('onedal', queue=queue)}"
+            )
+        else:
+            self.logger.debug(
+                f"{self.scope_name}: debugging for the patch is enabled to track"
+                " the usage of Intel® oneAPI Data Analytics Library (oneDAL)"
+            )
+            for message in self.messages:
+                self.logger.debug(
+                    f"{self.scope_name}: patching failed with cause - {message}"
+                )
+            self.logger.info(f"{self.scope_name}: {get_patch_message('sklearn')}")
+
 
 def set_sklearn_ex_verbose():
-    import logging
-    import warnings
-    import os
-    import sys
-    logLevel = os.environ.get("SKLEARNEX_VERBOSE")
+    log_level = os.environ.get("SKLEARNEX_VERBOSE")
+
+    logger = logging.getLogger("sklearnex")
+    logging_channel = logging.StreamHandler()
+    logging_formatter = logging.Formatter("%(levelname)s:%(name)s: %(message)s")
+    logging_channel.setFormatter(logging_formatter)
+    logger.addHandler(logging_channel)
+
     try:
-        if logLevel is not None:
-            logging.basicConfig(
-                stream=sys.stdout,
-                format='SKLEARNEX %(levelname)s: %(message)s', level=logLevel.upper())
+        if log_level is not None:
+            logger.setLevel(log_level)
     except Exception:
-        warnings.warn('Unknown level "{}" for logging.\n'
-                      'Please, use one of "CRITICAL", "ERROR", '
-                      '"WARNING", "INFO", "DEBUG".'.format(logLevel))
+        warnings.warn(
+            'Unknown level "{}" for logging.\n'
+            'Please, use one of "CRITICAL", "ERROR", '
+            '"WARNING", "INFO", "DEBUG".'.format(log_level)
+        )
 
 
-def get_patch_message(s, queue=None, cpu_fallback=False):
-    import sys
+def get_patch_message(s, queue=None):
     if s == "onedal":
         message = "running accelerated version on "
         if queue is not None:
             if queue.sycl_device.is_gpu:
-                message += 'GPU'
-            elif queue.sycl_device.is_cpu or queue.sycl_device.is_host:
-                message += 'CPU'
+                message += "GPU"
+            elif queue.sycl_device.is_cpu:
+                message += "CPU"
             else:
-                raise RuntimeError('Unsupported device')
-
-        elif 'daal4py.oneapi' in sys.modules:
-            from daal4py.oneapi import _get_device_name_sycl_ctxt
-            dev = _get_device_name_sycl_ctxt()
-            if dev == 'cpu' or dev == 'host' or dev is None:
-                message += 'CPU'
-            elif dev == 'gpu':
-                if cpu_fallback:
-                    message += 'CPU'
-                else:
-                    message += 'GPU'
-            else:
-                raise ValueError(f"Unexpected device name {dev}."
-                                 " Supported types are host, cpu and gpu")
+                raise RuntimeError("Unsupported device")
         else:
-            message += 'CPU'
-
+            message += "CPU"
     elif s == "sklearn":
         message = "fallback to original Scikit-learn"
     elif s == "sklearn_after_onedal":
@@ -67,10 +85,25 @@ def get_patch_message(s, queue=None, cpu_fallback=False):
     else:
         raise ValueError(
             f"Invalid input - expected one of 'onedal','sklearn',"
-            f" 'sklearn_after_onedal', got {s}")
+            f" 'sklearn_after_onedal', got {s}"
+        )
     return message
 
 
 def get_sklearnex_version(rule):
-    from daal4py.sklearn._utils import daal_check_version
     return daal_check_version(rule)
+
+
+def register_hyperparameters(hyperparameters_map):
+    """Decorator for hyperparameters support in estimator class.
+    Adds `get_hyperparameters` method to class.
+    """
+
+    def wrap_class(estimator_class):
+        def get_hyperparameters(self, op):
+            return hyperparameters_map[op]
+
+        estimator_class.get_hyperparameters = get_hyperparameters
+        return estimator_class
+
+    return wrap_class

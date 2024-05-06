@@ -16,8 +16,12 @@
 
 #pragma once
 
+#include <map>
+
 #include <Python.h>
 #include <numpy/arrayobject.h>
+
+#include "oneapi/dal/common.hpp"
 
 #define SET_CTYPE_NPY_FROM_DAL_TYPE(_T, _FUNCT, _EXCEPTION) \
     switch (_T) {                                           \
@@ -63,13 +67,6 @@
 
 #define SET_NPY_FEATURE(_T, _FUNCT, _EXCEPTION) \
     switch (_T) {                               \
-        case NPY_DOUBLE:                        \
-        case NPY_CDOUBLE:                       \
-        case NPY_DOUBLELTR:                     \
-        case NPY_CDOUBLELTR: {                  \
-            _FUNCT(double);                     \
-            break;                              \
-        }                                       \
         case NPY_FLOAT:                         \
         case NPY_CFLOAT:                        \
         case NPY_FLOATLTR:                      \
@@ -77,18 +74,31 @@
             _FUNCT(float);                      \
             break;                              \
         }                                       \
+        case NPY_DOUBLE:                        \
+        case NPY_CDOUBLE:                       \
+        case NPY_DOUBLELTR:                     \
+        case NPY_CDOUBLELTR: {                  \
+            _FUNCT(double);                     \
+            break;                              \
+        }                                       \
+        case NPY_INTLTR:                        \
         case NPY_INT32: {                       \
             _FUNCT(std::int32_t);               \
             break;                              \
         }                                       \
+        case NPY_UINTLTR:                       \
         case NPY_UINT32: {                      \
             _FUNCT(std::uint32_t);              \
             break;                              \
         }                                       \
+        case NPY_LONGLTR:                       \
+        case NPY_LONGLONGLTR:                   \
         case NPY_INT64: {                       \
             _FUNCT(std::int64_t);               \
             break;                              \
         }                                       \
+        case NPY_ULONGLTR:                      \
+        case NPY_ULONGLONGLTR:                  \
         case NPY_UINT64: {                      \
             _FUNCT(std::uint64_t);              \
             break;                              \
@@ -105,3 +115,17 @@
 #define array_numdims(a)   PyArray_NDIM((PyArrayObject *)a)
 #define array_data(a)      PyArray_DATA((PyArrayObject *)a)
 #define array_size(a, i)   PyArray_DIM((PyArrayObject *)a, i)
+
+namespace oneapi::dal::python {
+
+using npy_dtype_t = decltype(NPY_FLOAT);
+using npy_to_dal_t = std::map<npy_dtype_t, dal::data_type>;
+using dal_to_npy_t = std::map<dal::data_type, npy_dtype_t>;
+
+const npy_to_dal_t& get_npy_to_dal_map();
+const dal_to_npy_t& get_dal_to_npy_map();
+
+dal::data_type convert_npy_to_dal_type(npy_dtype_t);
+npy_dtype_t convert_dal_to_npy_type(dal::data_type);
+
+} // namespace oneapi::dal::python

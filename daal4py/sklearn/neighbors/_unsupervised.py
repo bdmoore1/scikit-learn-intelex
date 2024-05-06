@@ -1,4 +1,4 @@
-#===============================================================================
+# ==============================================================================
 # Copyright 2020 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,49 +12,46 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ==============================================================================
 
 # daal4py KNN scikit-learn-compatible classes
 
-from ._base import NeighborsBase, KNeighborsMixin, RadiusNeighborsMixin
-from .._utils import sklearn_check_version
+from sklearn.neighbors import NearestNeighbors as BaseNearestNeighbors
+from sklearn.utils.validation import _deprecate_positional_args
+
 from .._device_offload import support_usm_ndarray
-
-if sklearn_check_version("0.22"):
-    from sklearn.utils.validation import _deprecate_positional_args
-else:
-    def _deprecate_positional_args(f):
-        return f
+from ._base import KNeighborsMixin, NeighborsBase, RadiusNeighborsMixin
 
 
-if sklearn_check_version("0.22") and not sklearn_check_version("0.23"):
-    class NearestNeighbors(KNeighborsMixin, RadiusNeighborsMixin, NeighborsBase):
-        def __init__(self, n_neighbors=5, radius=1.0,
-                     algorithm='auto', leaf_size=30, metric='minkowski',
-                     p=2, metric_params=None, n_jobs=None):
-            super().__init__(
-                n_neighbors=n_neighbors,
-                radius=radius,
-                algorithm=algorithm,
-                leaf_size=leaf_size, metric=metric, p=p,
-                metric_params=metric_params, n_jobs=n_jobs)
+class NearestNeighbors(KNeighborsMixin, RadiusNeighborsMixin, NeighborsBase):
+    __doc__ = BaseNearestNeighbors.__doc__
 
-        @support_usm_ndarray()
-        def fit(self, X, y=None):
-            return NeighborsBase._fit(self, X)
-else:
-    class NearestNeighbors(KNeighborsMixin, RadiusNeighborsMixin, NeighborsBase):
-        @_deprecate_positional_args
-        def __init__(self, *, n_neighbors=5, radius=1.0,
-                     algorithm='auto', leaf_size=30, metric='minkowski',
-                     p=2, metric_params=None, n_jobs=None):
-            super().__init__(
-                n_neighbors=n_neighbors,
-                radius=radius,
-                algorithm=algorithm,
-                leaf_size=leaf_size, metric=metric, p=p,
-                metric_params=metric_params, n_jobs=n_jobs)
+    @_deprecate_positional_args
+    def __init__(
+        self,
+        *,
+        n_neighbors=5,
+        radius=1.0,
+        algorithm="auto",
+        leaf_size=30,
+        metric="minkowski",
+        p=2,
+        metric_params=None,
+        n_jobs=None,
+    ):
+        super().__init__(
+            n_neighbors=n_neighbors,
+            radius=radius,
+            algorithm=algorithm,
+            leaf_size=leaf_size,
+            metric=metric,
+            p=p,
+            metric_params=metric_params,
+            n_jobs=n_jobs,
+        )
 
-        @support_usm_ndarray()
-        def fit(self, X, y=None):
-            return NeighborsBase._fit(self, X)
+    @support_usm_ndarray()
+    def fit(self, X, y=None):
+        return NeighborsBase._fit(self, X)
+
+    fit.__doc__ = BaseNearestNeighbors.fit.__doc__

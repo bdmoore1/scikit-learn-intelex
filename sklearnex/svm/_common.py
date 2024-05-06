@@ -1,4 +1,4 @@
-#===============================================================================
+# ==============================================================================
 # Copyright 2021 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,21 +12,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ==============================================================================
 
 from abc import ABC
-import numpy as np
-try:
-    from packaging.version import Version
-except ImportError:
-    from distutils.version import LooseVersion as Version
 
+import numpy as np
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn import __version__ as sklearn_version
 
-from onedal.datatypes.validation import _column_or_1d
+from daal4py.sklearn._utils import sklearn_check_version
+from onedal.utils import _column_or_1d
+
+from .._utils import PatchingConditionsChain
 
 
 def get_dual_coef(self):
@@ -35,7 +33,7 @@ def get_dual_coef(self):
 
 def set_dual_coef(self, value):
     self.dual_coef_ = value
-    if hasattr(self, '_onedal_estimator'):
+    if hasattr(self, "_onedal_estimator"):
         self._onedal_estimator.dual_coef_ = value
         if not self._is_in_fit:
             del self._onedal_estimator._onedal_model
@@ -47,13 +45,48 @@ def get_intercept(self):
 
 def set_intercept(self, value):
     self._intercept_ = value
-    if hasattr(self, '_onedal_estimator'):
+    if hasattr(self, "_onedal_estimator"):
         self._onedal_estimator.intercept_ = value
         if not self._is_in_fit:
             del self._onedal_estimator._onedal_model
 
 
-class BaseSVC(ABC):
+class BaseSVM(ABC):
+    def _onedal_gpu_supported(self, method_name, *data):
+        patching_status = PatchingConditionsChain(f"sklearn.{method_name}")
+        patching_status.and_conditions([(False, "GPU offloading is not supported.")])
+        return patching_status
+
+    def _onedal_cpu_supported(self, method_name, *data):
+        class_name = self.__class__.__name__
+        patching_status = PatchingConditionsChain(
+            f"sklearn.svm.{class_name}.{method_name}"
+        )
+        if method_name == "fit":
+            patching_status.and_conditions(
+                [
+                    (
+                        self.kernel in ["linear", "rbf", "poly", "sigmoid"],
+                        f'Kernel is "{self.kernel}" while '
+                        '"linear", "rbf", "poly" and "sigmoid" are only supported.',
+                    )
+                ]
+            )
+            return patching_status
+        inference_methods = (
+            ["predict"]
+            if class_name.endswith("R")
+            else ["predict", "predict_proba", "decision_function", "score"]
+        )
+        if method_name in inference_methods:
+            patching_status.and_conditions(
+                [(hasattr(self, "_onedal_estimator"), "oneDAL model was not trained.")]
+            )
+            return patching_status
+        raise RuntimeError(f"Unknown method {method_name} in {class_name}")
+
+
+class BaseSVC(BaseSVM):
     def _compute_balanced_class_weight(self, y):
         y_ = _column_or_1d(y)
         classes, _ = np.unique(y_, return_inverse=True)
@@ -67,38 +100,27 @@ class BaseSVC(ABC):
         return recip_freq[le.transform(classes)]
 
     def _fit_proba(self, X, y, sample_weight=None, queue=None):
-        from .._config import get_config, config_context
-
         params = self.get_params()
         params["probability"] = False
-        params["decision_function_shape"] = 'ovr'
+        params["decision_function_shape"] = "ovr"
         clf_base = self.__class__(**params)
 
-        # We use stock metaestimators below, so the only way
-        # to pass a queue is using config_context.
-        cfg = get_config()
-        cfg['target_offload'] = queue
-        with config_context(**cfg):
-            try:
-                n_splits = 5
-                n_jobs = n_splits if queue is None or queue.sycl_device.is_cpu else 1
-                cv = StratifiedKFold(
-                    n_splits=n_splits,
-                    shuffle=True,
-                    random_state=self.random_state)
-                if Version(sklearn_version) >= Version("0.24"):
-                    self.clf_prob = CalibratedClassifierCV(
-                        clf_base, ensemble=False, cv=cv, method='sigmoid',
-                        n_jobs=n_jobs)
-                else:
-                    self.clf_prob = CalibratedClassifierCV(
-                        clf_base, cv=cv, method='sigmoid')
-                self.clf_prob.fit(X, y, sample_weight)
-            except ValueError:
-                clf_base = clf_base.fit(X, y, sample_weight)
-                self.clf_prob = CalibratedClassifierCV(
-                    clf_base, cv="prefit", method='sigmoid')
-                self.clf_prob.fit(X, y, sample_weight)
+        try:
+            n_splits = 5
+            n_jobs = n_splits if queue is None or queue.sycl_device.is_cpu else 1
+            cv = StratifiedKFold(
+                n_splits=n_splits, shuffle=True, random_state=self.random_state
+            )
+            self.clf_prob = CalibratedClassifierCV(
+                clf_base, ensemble=False, cv=cv, method="sigmoid", n_jobs=n_jobs
+            )
+            self.clf_prob.fit(X, y, sample_weight)
+        except ValueError:
+            clf_base = clf_base.fit(X, y, sample_weight)
+            self.clf_prob = CalibratedClassifierCV(
+                clf_base, cv="prefit", method="sigmoid"
+            )
+            self.clf_prob.fit(X, y, sample_weight)
 
     def _save_attributes(self):
         self.support_vectors_ = self._onedal_estimator.support_vectors_
@@ -107,6 +129,7 @@ class BaseSVC(ABC):
         self.dual_coef_ = self._onedal_estimator.dual_coef_
         self.shape_fit_ = self._onedal_estimator.class_weight_
         self.classes_ = self._onedal_estimator.classes_
+        self.class_weight_ = self._onedal_estimator.class_weight_
         self.support_ = self._onedal_estimator.support_
 
         self._intercept_ = self._onedal_estimator.intercept_
@@ -129,8 +152,12 @@ class BaseSVC(ABC):
         self.intercept_ = self._intercept_
         self._is_in_fit = False
 
+        if sklearn_check_version("1.1"):
+            length = int(len(self.classes_) * (len(self.classes_) - 1) / 2)
+            self.n_iter_ = np.full((length,), self._onedal_estimator.n_iter_)
 
-class BaseSVR(ABC):
+
+class BaseSVR(BaseSVM):
     def _save_attributes(self):
         self.support_vectors_ = self._onedal_estimator.support_vectors_
         self.n_features_in_ = self._onedal_estimator.n_features_in_
@@ -153,3 +180,6 @@ class BaseSVR(ABC):
         self._dual_coef_ = self.dual_coef_
         self.intercept_ = self._intercept_
         self._is_in_fit = False
+
+        if sklearn_check_version("1.1"):
+            self.n_iter_ = self._onedal_estimator.n_iter_

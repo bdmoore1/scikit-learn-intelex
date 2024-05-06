@@ -36,15 +36,17 @@ struct skl_tree_node {
     double impurity;
     Py_ssize_t n_node_samples;
     double weighted_n_node_samples;
+    unsigned char missing_go_to_left;
 
     skl_tree_node()
         : left_child(TERMINAL_NODE),
           right_child(TERMINAL_NODE),
           feature(NO_FEATURE),
-          threshold(get_nan64()),
+          threshold(NO_FEATURE),
           impurity(get_nan64()),
           n_node_samples(0),
-          weighted_n_node_samples(0.0)
+          weighted_n_node_samples(0.0),
+          missing_go_to_left(false)
     {}
 };
 
@@ -231,6 +233,7 @@ bool toSKLearnTreeObjectVisitor<M>::onSplitNode(const typename TNVT<M>::split_de
     node_ar[node_id].impurity = desc.impurity;
     node_ar[node_id].n_node_samples = desc.nNodeSampleCount;
     node_ar[node_id].weighted_n_node_samples = desc.nNodeSampleCount;
+    node_ar[node_id].missing_go_to_left = false;
 
     // wrap-up
     ++node_id;
@@ -266,6 +269,7 @@ bool toSKLearnTreeObjectVisitor<M>::_onLeafNode(const daal::algorithms::tree_uti
     node_ar[node_id].impurity = desc.impurity;
     node_ar[node_id].n_node_samples = desc.nNodeSampleCount;
     node_ar[node_id].weighted_n_node_samples = desc.nNodeSampleCount;
+    node_ar[node_id].missing_go_to_left = false;
 
     return true;
 }

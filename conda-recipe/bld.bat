@@ -15,10 +15,9 @@ rem See the License for the specific language governing permissions and
 rem limitations under the License.
 rem ============================================================================
 
-set DAAL4PY_VERSION=%PKG_VERSION%
-set MPIROOT=%PREFIX%\Library
+IF DEFINED PKG_VERSION (set DAAL4PY_VERSION=%PKG_VERSION%)
 
-IF DEFINED DAALROOT (set DALROOT=%DAALROOT%)
+set MPIROOT=%PREFIX%\Library
 
 IF NOT DEFINED DALROOT (set DALROOT=%PREFIX%)
 

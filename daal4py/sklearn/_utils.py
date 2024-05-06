@@ -1,4 +1,4 @@
-#===============================================================================
+# ==============================================================================
 # Copyright 2014 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,62 +12,109 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ==============================================================================
+
+import functools
+import os
+import sys
+import warnings
+from typing import Any, Callable, Tuple
 
 import numpy as np
-import sys
+from numpy.lib.recfunctions import require_fields
+from sklearn import __version__ as sklearn_version
 
 from daal4py import _get__daal_link_version__ as dv
-from sklearn import __version__ as sklearn_version
+
+DaalVersionTuple = Tuple[int, str, int]
+
 try:
     from packaging.version import Version
 except ImportError:
     from distutils.version import LooseVersion as Version
+
 import logging
+
+try:
+    from pandas import DataFrame
+    from pandas.core.dtypes.cast import find_common_type
+
+    pandas_is_imported = True
+except (ImportError, ModuleNotFoundError):
+    pandas_is_imported = False
+
+try:
+    from daal4py.oneapi import is_in_sycl_ctxt as is_in_ctx
+
+    ctx_imported = True
+except (ImportError, ModuleNotFoundError):
+    ctx_imported = False
+
+oneapi_is_available = "daal4py.oneapi" in sys.modules
+if oneapi_is_available:
+    from daal4py.oneapi import _get_device_name_sycl_ctxt
 
 
 def set_idp_sklearn_verbose():
-    import warnings
-    import os
     logLevel = os.environ.get("IDP_SKLEARN_VERBOSE")
     try:
         if logLevel is not None:
             logging.basicConfig(
                 stream=sys.stdout,
-                format='%(levelname)s: %(message)s', level=logLevel.upper())
+                format="%(levelname)s: %(message)s",
+                level=logLevel.upper(),
+            )
     except Exception:
-        warnings.warn('Unknown level "{}" for logging.\n'
-                      'Please, use one of "CRITICAL", "ERROR", '
-                      '"WARNING", "INFO", "DEBUG".'.format(logLevel))
+        warnings.warn(
+            'Unknown level "{}" for logging.\n'
+            'Please, use one of "CRITICAL", "ERROR", '
+            '"WARNING", "INFO", "DEBUG".'.format(logLevel)
+        )
 
 
-def daal_check_version(rule):
-    # First item is major version - 2021,
-    # second is minor+patch - 0110,
-    # third item is status - B
-    target = (int(dv()[0:4]), dv()[10:11], int(dv()[4:8]))
-    if not isinstance(rule[0], type(target)):
-        if rule > target:
-            return False
-    else:
-        for rule_item in rule:
-            if rule_item > target:
-                return False
-            if rule_item[0] == target[0]:
-                break
-    return True
+def get_daal_version() -> DaalVersionTuple:
+    return int(dv()[0:4]), str(dv()[10:11]), int(dv()[4:8])
 
 
+@functools.lru_cache(maxsize=256, typed=False)
+def daal_check_version(
+    required_version: Tuple[Any, ...],
+    daal_version: Tuple[Any, ...] = get_daal_version(),
+) -> bool:
+    """Check daal version provided as (MAJOR, STATUS, MINOR+PATCH)
+
+    This function also accepts a list or tuple of daal versions. It will return true if
+    any version in the list/tuple is <= `daal_version`.
+    """
+    if isinstance(required_version[0], (list, tuple)):
+        # a list of version candidates was provided, recursively check if any is <= daal_version
+        return any(
+            map(lambda ver: daal_check_version(ver, daal_version), required_version)
+        )
+
+    major_required, status_required, patch_required = required_version
+    major, status, patch = daal_version
+
+    if status != status_required:
+        return False
+
+    if major_required < major:
+        return True
+    if major == major_required:
+        return patch_required <= patch
+
+    return False
+
+
+@functools.lru_cache(maxsize=256, typed=False)
 def sklearn_check_version(ver):
-    if hasattr(Version(ver), 'base_version'):
+    if hasattr(Version(ver), "base_version"):
         base_sklearn_version = Version(sklearn_version).base_version
-        return bool(Version(base_sklearn_version) >= Version(ver))
-    # packaging module not available
-    return bool(Version(sklearn_version) >= Version(ver))
-
-
-def get_daal_version():
-    return (int(dv()[0:4]), dv()[10:11], int(dv()[4:8]))
+        res = bool(Version(base_sklearn_version) >= Version(ver))
+    else:
+        # packaging module not available
+        res = bool(Version(sklearn_version) >= Version(ver))
+    return res
 
 
 def parse_dtype(dt):
@@ -79,16 +126,12 @@ def parse_dtype(dt):
 
 
 def getFPType(X):
-    try:
-        from pandas import DataFrame
-        from pandas.core.dtypes.cast import find_common_type
+    if pandas_is_imported:
         if isinstance(X, DataFrame):
             dt = find_common_type(X.dtypes.tolist())
             return parse_dtype(dt)
-    except ImportError:
-        pass
 
-    dt = getattr(X, 'dtype', None)
+    dt = getattr(X, "dtype", None)
     return parse_dtype(dt)
 
 
@@ -103,18 +146,18 @@ def make2d(X):
 def get_patch_message(s):
     if s == "daal":
         message = "running accelerated version on "
-        if 'daal4py.oneapi' in sys.modules:
-            from daal4py.oneapi import _get_device_name_sycl_ctxt
+        if oneapi_is_available:
             dev = _get_device_name_sycl_ctxt()
-            if dev == 'cpu' or dev == 'host' or dev is None:
-                message += 'CPU'
-            elif dev == 'gpu':
-                message += 'GPU'
+            if dev == "cpu" or dev is None:
+                message += "CPU"
+            elif dev == "gpu":
+                message += "GPU"
             else:
-                raise ValueError(f"Unexpected device name {dev}."
-                                 " Supported types are host, cpu and gpu")
+                raise ValueError(
+                    f"Unexpected device name {dev}." " Supported types are cpu and gpu"
+                )
         else:
-            message += 'CPU'
+            message += "CPU"
 
     elif s == "sklearn":
         message = "fallback to original Scikit-learn"
@@ -123,31 +166,29 @@ def get_patch_message(s):
     else:
         raise ValueError(
             f"Invalid input - expected one of 'daal','sklearn',"
-            f" 'sklearn_after_daal', got {s}")
+            f" 'sklearn_after_daal', got {s}"
+        )
     return message
 
 
 def is_in_sycl_ctxt():
-    try:
-        from daal4py.oneapi import is_in_sycl_ctxt as is_in_ctx
+    if ctx_imported:
         return is_in_ctx()
-    except ModuleNotFoundError:
+    else:
         return False
 
 
 def is_DataFrame(X):
-    try:
-        from pandas import DataFrame
+    if pandas_is_imported:
         return isinstance(X, DataFrame)
-    except ImportError:
+    else:
         return False
 
 
 def get_dtype(X):
-    try:
-        from pandas.core.dtypes.cast import find_common_type
+    if pandas_is_imported:
         return find_common_type(list(X.dtypes)) if is_DataFrame(X) else X.dtype
-    except ImportError:
+    else:
         return getattr(X, "dtype", None)
 
 
@@ -159,11 +200,33 @@ def get_number_of_types(dataframe):
         return 1
 
 
+def check_tree_nodes(tree_nodes):
+    def convert_to_old_tree_nodes(tree_nodes):
+        # conversion from sklearn>=1.3 tree nodes format to previous format:
+        # removal of 'missing_go_to_left' field from node dtype
+        new_field = "missing_go_to_left"
+        new_dtype = tree_nodes.dtype
+        old_dtype = np.dtype(
+            [
+                (key, value[0])
+                for key, value in new_dtype.fields.items()
+                if key != new_field
+            ]
+        )
+        return require_fields(tree_nodes, old_dtype)
+
+    if sklearn_check_version("1.3"):
+        return tree_nodes
+    else:
+        return convert_to_old_tree_nodes(tree_nodes)
+
+
 class PatchingConditionsChain:
     def __init__(self, scope_name):
         self.scope_name = scope_name
         self.patching_is_enabled = True
         self.messages = []
+        self.logger = logging.getLogger("sklearnex")
 
     def _iter_conditions(self, conditions_and_messages):
         result = []
@@ -175,25 +238,34 @@ class PatchingConditionsChain:
 
     def and_conditions(self, conditions_and_messages, conditions_merging=all):
         self.patching_is_enabled &= conditions_merging(
-            self._iter_conditions(conditions_and_messages))
+            self._iter_conditions(conditions_and_messages)
+        )
         return self.patching_is_enabled
+
+    def and_condition(self, condition, message):
+        return self.and_conditions([(condition, message)])
 
     def or_conditions(self, conditions_and_messages, conditions_merging=all):
         self.patching_is_enabled |= conditions_merging(
-            self._iter_conditions(conditions_and_messages))
-        return self.patching_is_enabled
-
-    def get_status(self):
+            self._iter_conditions(conditions_and_messages)
+        )
         return self.patching_is_enabled
 
     def write_log(self):
         if self.patching_is_enabled:
-            logging.info(f"{self.scope_name}: {get_patch_message('daal')}")
+            self.logger.info(f"{self.scope_name}: {get_patch_message('daal')}")
         else:
-            logging.debug(
-                f'{self.scope_name}: debugging for the patch is enabled to track'
-                ' the usage of Intel® oneAPI Data Analytics Library (oneDAL)')
+            self.logger.debug(
+                f"{self.scope_name}: debugging for the patch is enabled to track"
+                " the usage of Intel® oneAPI Data Analytics Library (oneDAL)"
+            )
             for message in self.messages:
-                logging.debug(
-                    f'{self.scope_name}: patching failed with cause - {message}')
-            logging.info(f"{self.scope_name}: {get_patch_message('sklearn')}")
+                self.logger.debug(
+                    f"{self.scope_name}: patching failed with cause - {message}"
+                )
+            self.logger.info(f"{self.scope_name}: {get_patch_message('sklearn')}")
+
+    def get_status(self, logs=False):
+        if logs:
+            self.write_log()
+        return self.patching_is_enabled

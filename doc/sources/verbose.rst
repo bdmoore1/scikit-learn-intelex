@@ -23,15 +23,23 @@ Verbose Mode
 Use |intelex| in verbose mode to find out which implementation of the algorithm is currently used,
 |intelex| or original Scikit-learn.
 
+.. note:: Verbose mode is only available for :ref:`supported algorithms <sklearn_algorithms>`.
+
 To enable verbose mode, set the ``SKLEARNEX_VERBOSE`` environment variable as shown below:
 
-- On Linux and MacOS::
+- On Linux* OS ::
 
      export SKLEARNEX_VERBOSE=INFO
 
-- On Windows::
+- On Windows* OS ::
 
      set SKLEARNEX_VERBOSE=INFO
+
+Alternatively, get |intelex| logger and set its logging level in the Python code::
+
+     import logging
+     logger = logging.getLogger('sklearnex')
+     logger.setLevel(logging.INFO)
 
 During the calls that use Intel-optimized scikit-learn, you will receive additional print statements
 that indicate which implementation is being called.
@@ -39,8 +47,8 @@ These print statements are only available for :ref:`supported algorithms <sklear
 
 For example, for DBSCAN you get one of these print statements depending on which implementation is used::
 
-    SKLEARNEX INFO: sklearn.cluster.DBSCAN.fit: running accelerated version on CPU
+    INFO:sklearnex: sklearn.cluster.DBSCAN.fit: running accelerated version on CPU
 
 ::
 
-    SKLEARNEX INFO: sklearn.cluster.DBSCAN.fit: fallback to original Scikit-learn
+    INFO:sklearnex: sklearn.cluster.DBSCAN.fit: fallback to original Scikit-learn

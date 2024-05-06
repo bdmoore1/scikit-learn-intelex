@@ -63,48 +63,150 @@ message(STATUS "PYTHON_INCLUDE_DIR:" ${PYTHON_INCLUDE_DIR})
 message(STATUS "PYTHON_LIBRARY_DIR:" ${PYTHON_LIBRARY_DIR})
 message(STATUS "NUMPY_INCLUDE_DIRS:" ${NUMPY_INCLUDE_DIRS})
 
+if(IFACE STREQUAL "dpc")
+    set(IFACE_IS_DPC ON)
+else()
+    set(IFACE_IS_DPC OFF)
+endif()
+
+if(IFACE STREQUAL "spmd_dpc")
+    set(IFACE_IS_SPMD_DPC ON)
+else()
+    set(IFACE_IS_SPMD_DPC OFF)
+endif()
+
+if(IFACE_IS_SPMD_DPC)
+    message(STATUS "MPI_INCLUDE_DIRS:" ${MPI_INCLUDE_DIRS})
+    message(STATUS "MPI_LIBRARY_DIR:" ${MPI_LIBRARY_DIR})
+endif()
+
+message(STATUS "oneDAL_USE_PARAMETERS_LIB:" ${oneDAL_USE_PARAMETERS_LIB})
+
 find_package(pybind11 REQUIRED)
 
 if(IFACE STREQUAL "host")
     set(TARGET "_onedal_py_host")
 
+    set(ONEDAL_LIBRARIES "")
     if(WIN32)
-        set(ONEDAL_LIBRARIES "onedal_dll" "onedal_core_dll")
+        list(APPEND ONEDAL_LIBRARIES "onedal_dll.${ONEDAL_MAJOR_BINARY}")
+        list(APPEND ONEDAL_LIBRARIES "onedal_core_dll.${ONEDAL_MAJOR_BINARY}")
+    elseif(APPLE)
+        list(APPEND ONEDAL_LIBRARIES "onedal.${ONEDAL_MAJOR_BINARY}")
+        list(APPEND ONEDAL_LIBRARIES "onedal_core.${ONEDAL_MAJOR_BINARY}")
+        list(APPEND ONEDAL_LIBRARIES "onedal_thread.${ONEDAL_MAJOR_BINARY}")
     else()
-        set(ONEDAL_LIBRARIES "onedal" "onedal_core" "onedal_thread")
+        list(APPEND ONEDAL_LIBRARIES "-l:libonedal.so.${ONEDAL_MAJOR_BINARY}")
+        list(APPEND ONEDAL_LIBRARIES "-l:libonedal_core.so.${ONEDAL_MAJOR_BINARY}")
+        list(APPEND ONEDAL_LIBRARIES "-l:libonedal_thread.so.${ONEDAL_MAJOR_BINARY}")
+    endif()
+
+    if(oneDAL_USE_PARAMETERS_LIB)
+        if(WIN32)
+            list(APPEND ONEDAL_LIBRARIES "onedal_core_parameters_dll.${ONEDAL_MAJOR_BINARY}")
+        elseif(APPLE)
+            list(APPEND ONEDAL_LIBRARIES "onedal_parameters.${ONEDAL_MAJOR_BINARY}")
+        else()
+            list(APPEND ONEDAL_LIBRARIES "-l:libonedal_parameters.so.${ONEDAL_MAJOR_BINARY}")
+        endif()
     endif()
 
     list(APPEND COMPILE_DEFINITIONS "NPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION")
 
-elseif(IFACE STREQUAL "dpc")
-    set(TARGET "_onedal_py_dpc")
+elseif(IFACE_IS_DPC OR IFACE_IS_SPMD_DPC)
 
-    if(WIN32)
-        set(ONEDAL_LIBRARIES "onedal_dpc_dll" "onedal_core_dll")
+    if(IFACE_IS_SPMD_DPC)
+        set(TARGET "_onedal_py_spmd_dpc")
     else()
-        set(ONEDAL_LIBRARIES "onedal_dpc" "onedal_core" "onedal_thread")
+        set(TARGET "_onedal_py_dpc")
+    endif()
+
+    # FIXME: icx>=2024.1 and pybind11 don't work correctly with IPO
+    if(WIN32)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
+    endif()
+
+    if(CMAKE_CXX_COMPILER MATCHES ".*icpx" OR CMAKE_CXX_COMPILER MATCHES ".*icx")
+        set(CMAKE_CXX_FLAGS "-fsycl ${CMAKE_CXX_FLAGS}")
+    endif()
+
+    if(CMAKE_C_COMPILER MATCHES ".*icpx" OR CMAKE_C_COMPILER MATCHES ".*icx")
+        set(CMAKE_C_FLAGS "-fsycl ${CMAKE_C_FLAGS}")
+    endif()
+
+    set(ONEDAL_LIBRARIES "")
+    if(WIN32)
+        list(APPEND ONEDAL_LIBRARIES "onedal_dpc_dll.${ONEDAL_MAJOR_BINARY}")
+        list(APPEND ONEDAL_LIBRARIES "onedal_core_dll.${ONEDAL_MAJOR_BINARY}")
+    elseif(APPLE)
+        list(APPEND ONEDAL_LIBRARIES "onedal_dpc.${ONEDAL_MAJOR_BINARY}")
+        list(APPEND ONEDAL_LIBRARIES "onedal_core.${ONEDAL_MAJOR_BINARY}")
+        list(APPEND ONEDAL_LIBRARIES "onedal_thread.${ONEDAL_MAJOR_BINARY}")
+    else()
+        list(APPEND ONEDAL_LIBRARIES "-l:libonedal_dpc.so.${ONEDAL_MAJOR_BINARY}")
+        list(APPEND ONEDAL_LIBRARIES "-l:libonedal_core.so.${ONEDAL_MAJOR_BINARY}")
+        list(APPEND ONEDAL_LIBRARIES "-l:libonedal_thread.so.${ONEDAL_MAJOR_BINARY}")
+    endif()
+
+    if(oneDAL_USE_PARAMETERS_LIB)
+        if(WIN32)
+            list(APPEND ONEDAL_LIBRARIES "onedal_core_parameters_dpc_dll.${ONEDAL_MAJOR_BINARY}")
+        elseif(APPLE)
+            list(APPEND ONEDAL_LIBRARIES "onedal_parameters_dpc.${ONEDAL_MAJOR_BINARY}")
+        else()
+            list(APPEND ONEDAL_LIBRARIES "-l:libonedal_parameters_dpc.so.${ONEDAL_MAJOR_BINARY}")
+        endif()
+    endif()
+
+    if(IFACE_IS_SPMD_DPC)
+        set(MPI_LIBRARY ${MPI_LIBS})
     endif()
 
     list(APPEND COMPILE_DEFINITIONS
         "ONEDAL_DATA_PARALLEL"
         "NPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION")
+
+    if(IFACE_IS_SPMD_DPC)
+        list(APPEND COMPILE_DEFINITIONS
+             "ONEDAL_DATA_PARALLEL_SPMD")
+    endif()
+
 else()
     message(FATAL_ERROR "Invalid IFACE value: " ${IFACE})
 endif()
 
 pybind11_add_module(${TARGET} ${sources})
 
-target_include_directories(${TARGET}
-    PRIVATE ${PYTHON_ONEDAL}../
-    PRIVATE ${oneDAL_INCLUDE_DIRS}
-    PRIVATE ${PYTHON_INCLUDE_DIR}
-    PRIVATE ${NUMPY_INCLUDE_DIRS}
+set(EXTERNAL_INCLUDE_DIRECTORIES
+    ${PYTHON_ONEDAL}../
+    ${oneDAL_INCLUDE_DIRS}
+    ${PYTHON_INCLUDE_DIR}
+    ${NUMPY_INCLUDE_DIRS}
 )
 
-target_compile_definitions(${TARGET} PUBLIC ${COMPILE_DEFINITIONS})
-target_link_directories(${TARGET} PRIVATE ${PYTHON_LIBRARY_DIR} ${oneDAL_LIBRARY_DIR})
-target_link_libraries(${TARGET} PUBLIC ${ONEDAL_LIBRARIES})
+# TODO: remove this workaround when oneDAL CMake config is fixed
+if(WIN32)
+list(APPEND EXTERNAL_INCLUDE_DIRECTORIES $ENV{DALROOT}/Library/include/dal $ENV{DALROOT}/include/dal)
+else()
+list(APPEND EXTERNAL_INCLUDE_DIRECTORIES ${oneDAL_INCLUDE_DIRS}/dal)
+endif()
+
+set(EXTERNAL_LINK_DIRECTORIES ${PYTHON_LIBRARY_DIR} ${oneDAL_LIBRARY_DIR})
+set(EXTERNAL_LINK_LIBRARIES ${ONEDAL_LIBRARIES})
+
+if(IFACE_IS_SPMD_DPC)
+list(APPEND EXTERNAL_LINK_LIBRARIES ${MPI_LIBRARY})
+list(APPEND EXTERNAL_LINK_DIRECTORIES ${MPI_LIBRARY_DIR})
+list(APPEND EXTERNAL_INCLUDE_DIRECTORIES ${MPI_INCLUDE_DIRS})
+endif()
+
 target_link_options(${TARGET} PRIVATE ${ONEDAL_PY_LINK_OPTIONS})
+target_link_libraries(${TARGET} PUBLIC ${EXTERNAL_LINK_LIBRARIES})
+target_compile_definitions(${TARGET} PUBLIC ${COMPILE_DEFINITIONS})
+target_link_directories(${TARGET} PRIVATE ${EXTERNAL_LINK_DIRECTORIES})
+target_include_directories(${TARGET} PRIVATE ${EXTERNAL_INCLUDE_DIRECTORIES})
+
+message(STATUS "NUMPY_INCLUDE_DIRS:" ${NUMPY_INCLUDE_DIRS})
 
 install(
   TARGETS ${TARGET}

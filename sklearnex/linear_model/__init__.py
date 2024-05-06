@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-#===============================================================================
+# ===============================================================================
 # Copyright 2021 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,18 +12,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-from .linear import LinearRegression
-from .logistic_path import logistic_regression_path, LogisticRegression
-from .ridge import Ridge
 from .coordinate_descent import ElasticNet, Lasso
+from .incremental_linear import IncrementalLinearRegression
+from .linear import LinearRegression
+from .logistic_regression import LogisticRegression
+from .ridge import Ridge
 
 __all__ = [
-    'Ridge',
-    'LinearRegression',
-    'LogisticRegression',
-    'logistic_regression_path',
-    'ElasticNet',
-    'Lasso'
+    "ElasticNet",
+    "IncrementalLinearRegression",
+    "Lasso",
+    "LinearRegression",
+    "LogisticRegression",
+    "Ridge",
 ]

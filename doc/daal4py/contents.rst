@@ -19,14 +19,18 @@
 ########
 Contents
 ########
+
+.. include:: note.rst
+   
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
 
    About daal4py <index>
    Data <data>
+   Model Builders <model-builders>
    Supported Algorithms <algorithms>
-   Distribution <scaling>
-   Streaming <streaming>
+   Distributed Mode <scaling>
+   Streaming Mode <streaming>
    Examples <examples>
    Scikit-Learn API <sklearn>

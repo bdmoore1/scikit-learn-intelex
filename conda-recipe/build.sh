@@ -26,11 +26,6 @@ if [ ! -z "${DPCPPROOT}" ]; then
     source ${DPCPPROOT}/env/vars.sh
 fi
 
-# if DAALROOT not exists then provide PREFIX
-if [ "${DAALROOT}" != "" ] && [ "${DALROOT}" == "" ] ; then
-    export DALROOT="${DAALROOT}"
-fi
-
 if [ -z "${DALROOT}" ]; then
     export DALROOT=${PREFIX}
 fi
@@ -40,6 +35,8 @@ if [ "$(uname)" == "Darwin" ]; then
     export CXX=g++
 fi
 
-export DAAL4PY_VERSION=$PKG_VERSION
+if [ ! -z "${PKG_VERSION}" ]; then
+    export DAAL4PY_VERSION=$PKG_VERSION
+fi
 export MPIROOT=${PREFIX}
 ${PYTHON} setup.py install $ARGS
